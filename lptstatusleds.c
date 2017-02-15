@@ -105,8 +105,8 @@ int ping(struct sockaddr_in *addr)
 	}
 	if ( setsockopt(sd, SOL_IP, IP_TTL, &val, sizeof(val)) != 0)
 		perror("Set TTL option");
-//	if ( fcntl(sd, F_SETFL, O_NONBLOCK) != 0 )
-//		perror("Request nonblocking I/O");
+	if ( fcntl(sd, F_SETFL, O_NONBLOCK) != 0 )
+		perror("Request nonblocking I/O");
 	for (;;)
 	{	int len=sizeof(r_addr);
 		//printf("Msg #%d\n", cnt);
@@ -120,10 +120,12 @@ int ping(struct sockaddr_in *addr)
 		pckt.hdr.checksum = checksum(&pckt, sizeof(pckt));
 		if ( sendto(sd, &pckt, sizeof(pckt), 0, (struct sockaddr*)addr, sizeof(*addr)) <= 0 )
 			return -1;
-		sleep(1);
-		if ( recvfrom(sd, &pckt, sizeof(pckt), 0, (struct sockaddr*)&r_addr, &len) > 0 )
-			return 1;
-                else return 0;
+		for (int timeout = 0; timeout < 20; timeout++)
+		{
+        		if ( recvfrom(sd, &pckt, sizeof(pckt), 0, (struct sockaddr*)&r_addr, &len) > 0 ) return 1;
+			usleep (100000);
+                }
+                return 0;
 	}
 }
 
@@ -411,6 +413,7 @@ int pinghost(char *hostname)
         struct hostent *hname;
         struct sockaddr_in addr;
 
+
         pid = getpid();
         proto = getprotobyname("ICMP");
                 hname = gethostbyname(hostname);
@@ -418,7 +421,10 @@ int pinghost(char *hostname)
                 addr.sin_family = hname->h_addrtype;
                 addr.sin_port = 0;
                 addr.sin_addr.s_addr = *(long*)hname->h_addr;
-                return ping(&addr);
+                int result = ping(&addr);
+                if (result) printf ("Connection to host %s Ok\n", hostname);
+                else printf ("Connection to host %s Failed\n", hostname);
+                return result;
 }
 
 #include <stdio.h>
@@ -443,15 +449,11 @@ void *checkThread( void * argStruct ){
     int pingGateway = 0;
     int pingInternet = 0;
 
-    while (1)
-    {
-        pingGateway = pinghost (getgateway());
-        pingInternet = pinghost ("www.google.com");
+    pingGateway = pinghost (getgateway());
+    pingInternet = pinghost ("www.google.com");
 
-        *args->pingGateway = pingGateway;
-        *args->pingInternet = pingInternet;
-        sleep(10);
-    }
+    *args->pingGateway = pingGateway;
+    *args->pingInternet = pingInternet;
     return NULL;
 }
 
@@ -472,7 +474,7 @@ int getnetbytessec()
     fclose(fp);
     if (connected == 0)
     {
-        printf ("Network is disconnected\n");
+        //printf ("Network is disconnected\n");
         return -1;
     }
 
@@ -529,7 +531,6 @@ int main(int argc, char **argv)
     ThreadArgs args = (ThreadArgs)malloc(sizeof(struct threadArgs));
     args->pingInternet = &pingInternet; // pass in a pointer to the variable, rather than the variable itself
     args->pingGateway = &pingGateway; // pass in a pointer to the variable, rather than the variable itself
-    pthread_create(&t1, NULL, checkThread, args);
 
 
         struct ppdev_frob_struct frob;
@@ -547,13 +548,30 @@ int main(int argc, char **argv)
         }
         int lptdata = 0;
         int netbytes = 0;
-        printf (" 3 2 1 A \n");
         int slowblinkloadcounter = 0;
+        int pinghostcounter = 50;
+        int prevnet = -1;
         while (1)
         {
                 double load = getload();
                 int net = getnetbytessec();
                 
+                if (net != prevnet)
+                {
+                    if (prevnet < 0) 
+                    {
+                        printf ("Ethernet connection is up\n");
+                        pinghostcounter = 10;
+                    }
+                    if (net < 0) printf ("Ethernet connection is down\n");
+                    prevnet = net; 
+                }
+                
+                if (pinghostcounter-- < 0)
+                {
+                        pthread_create(&t1, NULL, checkThread, args);
+                        pinghostcounter = 50;
+                }
 
                 if (net > 0) // When traffic is measured blink 1st led
                 {
@@ -562,11 +580,8 @@ int main(int argc, char **argv)
                 
                 if (net > 1000000) lptdata &= 0b11011111; // When more than 1mbit traffic is generated blink 2nd led
                 if (net > 500000000) lptdata &= 0b10111111; // Above 500 mbit blink 3rd led
-                ioctl(fd, PPWDATA,&lptdata);
+                ioctl(fd, PPWDATA,&lptdata); // Write leds to lpt port
 
-                printf (" %d %d %d %d\r", (lptdata & 0b1000000) > 0, (lptdata & 0b100000) > 0, (lptdata&0b10000)>0, (lptdata&0b1000)>0);
-                fflush(stdout); 
-                
                 usleep (100000);
 
                 if (load > 90) lptdata |= 0b1000;
@@ -576,18 +591,20 @@ int main(int argc, char **argv)
                 if (slowblinkloadcounter > 16) slowblinkloadcounter = 0;
 
                 if (net >= 0) lptdata |= 0b10000; // When connection is ok show 1st led
-                else lptdata &= 0b11101111;
-                ioctl(fd, PPWDATA,&lptdata);
+                else
+                {
+                    lptdata &= 0b11101111;
+                    pingGateway = 0;
+                    pingInternet = 0;
+                }
+                    
 
                 if (pingGateway) lptdata |= 0b100000; // If gateway is reachable show 2nd led
                 else lptdata &= 0b11011111;
                 
                 if (pingInternet)  lptdata |= 0b1000000; // If internet is reachable (google) show 3rd led
                 else lptdata &= 0b10111111;
-                ioctl(fd, PPWDATA,&lptdata);
-
-                printf (" %d %d %d %d\r", (lptdata & 0b1000000) > 0, (lptdata & 0b100000) > 0, (lptdata&0b10000)>0, (lptdata&0b1000)>0);
-                fflush(stdout); 
+                ioctl(fd, PPWDATA,&lptdata); // write leds to lpt port
         }
 
         pthread_join(t1, NULL);
