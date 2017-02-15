@@ -1,0 +1,11 @@
+[Unit]
+Description=Lpt status leds
+After=network.target auditd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/lptstatusleds
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
