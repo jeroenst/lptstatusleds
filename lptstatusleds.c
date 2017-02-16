@@ -145,7 +145,6 @@ int ping(struct sockaddr_in *addr)
 
 double getload(void);
 int getnetbytes(void);
-int getnetbytessec(void);
 
 
 
@@ -466,11 +465,11 @@ void *checkThread( void * argStruct ){
     return NULL;
 }
 
-int getnetbytessec()
+long long getnetbytessec()
 {
-    int bytessend, bytesrecv, bytessec;
-    static long oldbytes = 0;
-    static long oldtimestamp = 0;
+    long long bytessend, bytesrecv, bytessec;
+    static long long oldbytes = 0;
+    static long long oldtimestamp = 0;
     int connected = 0;
     FILE *fp;
     char *dump = NULL;
@@ -491,11 +490,11 @@ int getnetbytessec()
     getline(&dump, &len, fp);
     
     getline(&dump, &len, fp);
-    fscanf(fp,"%s %d %*d %*d %*d %*d %*d %*d %*d %d",ifacename, &bytesrecv,&bytessend);
+    fscanf(fp,"%s %lld %*d %*d %*d %*d %*d %*d %*d %lld",ifacename, &bytesrecv,&bytessend);
     
     getline(&dump, &len, fp);
     
-    if (strcmp (ifacename, "lo:") == 0) fscanf(fp,"%s %d %*d %*d %*d %*d %*d %*d %*d %d",ifacename, &bytesrecv,&bytessend);
+    if (strcmp (ifacename, "lo:") == 0) fscanf(fp,"%s %lld %*d %*d %*d %*d %*d %*d %*d %lld",ifacename, &bytesrecv,&bytessend);
     free(dump);
     fclose(fp);
 
@@ -575,7 +574,7 @@ int main(int argc, char **argv)
         while (1)
         {
                 double load = getload();
-                int net = getnetbytessec();
+                long long net = getnetbytessec();
                 
                 if (net != prevnet)
                 {
@@ -592,6 +591,7 @@ int main(int argc, char **argv)
                 {
                         pthread_create(&t1, NULL, checkThread, args);
                         pinghostcounter = 25;
+                        printf ("Current network troughput in bytes/sec: %lld\n", net); 
                 }
 
                 if (net > 0) // When traffic is measured blink 1st led
@@ -599,8 +599,8 @@ int main(int argc, char **argv)
                     lptdata &= 0b11101111; // When little traffic is generated blink 1st led
                 }
                 
-                if (net > 1000000) lptdata &= 0b11011111; // When more than 1mbit traffic is generated blink 2nd led
-                if (net > 100000000) lptdata &= 0b10111111; // Above 100 mbit blink 3rd led
+                if (net > 104857)   lptdata &= 0b11011111; // When more than 1mbit traffic is generated blink 2nd led
+                if (net > 10485760) lptdata &= 0b10111111; // Above 100 mbit blink 3rd led
                 ioctl(fd, PPWDATA,&lptdata); // Write leds to lpt port
 
                 usleep (200000);
