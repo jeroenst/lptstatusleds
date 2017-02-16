@@ -605,11 +605,14 @@ int main(int argc, char **argv)
 
                 usleep (200000);
 
-                if (load > 90) lptdata |= 0b1000;
-                if (load > 50) slowblinkloadcounter++;
-                if (slowblinkloadcounter > 3) lptdata |= 0b1000; // If load is above 50% blink alarm led
-                else if (load <= 90) lptdata &= 0b11110111;
-                if (slowblinkloadcounter > 6) slowblinkloadcounter = 0;
+                if (slowblinkloadcounter++ > 6) slowblinkloadcounter = 0;
+                
+                if (load >= 50) lptdata |= 0b1000; // If load is above 50% enable alarm led
+                
+                if (slowblinkloadcounter > 3)
+                {
+                    if (load < 90) lptdata &= 0b11110111; // If load is below 90% blink alarm led
+                }
 
                 if (net >= 0) lptdata |= 0b10000; // When connection is ok show 1st led
                 else
