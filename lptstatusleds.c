@@ -521,7 +521,7 @@ double getload(void)
         fp = fopen("/proc/stat","r");
         fscanf(fp,"%*s %Lf %Lf %Lf %Lf",&a[0],&a[1],&a[2],&a[3]);
         fclose(fp);
-        usleep(100000);
+        usleep(200000);
 
         fp = fopen("/proc/stat","r");
         fscanf(fp,"%*s %Lf %Lf %Lf %Lf",&b[0],&b[1],&b[2],&b[3]);
@@ -582,7 +582,7 @@ int main(int argc, char **argv)
                     if ((prevnet < 0) && (net >= 0))
                     {
                         printf ("Ethernet connection is up\n");
-                        pinghostcounter = 10;
+                        pinghostcounter = 5;
                     }
                     if ((net < 0) && (prevnet >= 0)) printf ("Ethernet connection is down\n");
                     prevnet = net; 
@@ -591,7 +591,7 @@ int main(int argc, char **argv)
                 if (pinghostcounter-- < 0)
                 {
                         pthread_create(&t1, NULL, checkThread, args);
-                        pinghostcounter = 50;
+                        pinghostcounter = 25;
                 }
 
                 if (net > 0) // When traffic is measured blink 1st led
@@ -603,7 +603,7 @@ int main(int argc, char **argv)
                 if (net > 500000000) lptdata &= 0b10111111; // Above 500 mbit blink 3rd led
                 ioctl(fd, PPWDATA,&lptdata); // Write leds to lpt port
 
-                usleep (100000);
+                usleep (200000);
 
                 if (load > 90) lptdata |= 0b1000;
                 if (load > 50) slowblinkloadcounter++;
