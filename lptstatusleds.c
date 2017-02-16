@@ -1,3 +1,10 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h> 
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -67,8 +74,14 @@ struct packet
 	char msg[PACKETSIZE-sizeof(struct icmphdr)];
 };
 
+
+void sig_term_handler(int signum, siginfo_t *info, void *ptr);
+
 int pid=-1;
 struct protoent *proto=NULL;
+
+
+
 
 /*--------------------------------------------------------------------*/
 /*--- checksum - standard 1s complement checksum                   ---*/
@@ -422,15 +435,12 @@ int pinghost(char *hostname)
                 addr.sin_port = 0;
                 addr.sin_addr.s_addr = *(long*)hname->h_addr;
                 int result = ping(&addr);
+                free(hname);
                 if (result) printf ("Connection to host %s Ok\n", hostname);
                 else printf ("Connection to host %s Failed\n", hostname);
                 return result;
 }
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <pthread.h> 
-#include <unistd.h>
 
 typedef struct threadArgs * ThreadArgs;
 
@@ -478,13 +488,18 @@ int getnetbytessec()
         return -1;
     }
 
-
-
     fp = fopen("/proc/net/dev","r");
     getline(&dump, &len, fp);
+    free(dump);
+    
     getline(&dump, &len, fp);
+    free(dump);
+    
     fscanf(fp,"%s %d %*d %*d %*d %*d %*d %*d %*d %d",ifacename, &bytesrecv,&bytessend);
+    
     getline(&dump, &len, fp);
+    free(dump);
+    
     if (strcmp (ifacename, "lo:") == 0) fscanf(fp,"%s %d %*d %*d %*d %*d %*d %*d %*d %d",ifacename, &bytesrecv,&bytessend);
     fclose(fp);
 
@@ -521,9 +536,19 @@ double getload(void)
 
     return(cpuusage);
 }
-
+int fd;
 int main(int argc, char **argv)
 {
+    static struct sigaction _sigact;
+
+    memset(&_sigact, 0, sizeof(_sigact));
+    _sigact.sa_sigaction = sig_term_handler;
+    _sigact.sa_flags = SA_SIGINFO;
+
+    sigaction(SIGTERM, &_sigact, NULL);
+    sigaction(SIGINT, &_sigact, NULL);
+    sigaction(15, &_sigact, NULL);
+    
     pthread_t t1;
     int pingGateway = 0;
     int pingInternet = 0;
@@ -534,7 +559,7 @@ int main(int argc, char **argv)
 
 
         struct ppdev_frob_struct frob;
-        int fd;
+       // int fd;
         int mode;
 
         if((fd=open(DEVICE, O_RDWR)) < 0) {
@@ -615,3 +640,10 @@ int main(int argc, char **argv)
         return 0;
 }
 
+void sig_term_handler(int signum, siginfo_t *info, void *ptr)
+{
+        int lptdata = 0;
+        ioctl(fd, PPWDATA,&lptdata);
+        close(fd);
+        abort();
+}
