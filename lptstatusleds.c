@@ -600,7 +600,7 @@ int main(int argc, char **argv)
                 }
                 
                 if (net > 1000000) lptdata &= 0b11011111; // When more than 1mbit traffic is generated blink 2nd led
-                if (net > 500000000) lptdata &= 0b10111111; // Above 500 mbit blink 3rd led
+                if (net > 100000000) lptdata &= 0b10111111; // Above 100 mbit blink 3rd led
                 ioctl(fd, PPWDATA,&lptdata); // Write leds to lpt port
 
                 usleep (200000);
