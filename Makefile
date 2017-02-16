@@ -1,6 +1,6 @@
 IDIR =../include
 CC=gcc
-CFLAGS=-I$(IDIR)
+CFLAGS=-I$(IDIR) -Os
 
 ODIR=.
 LDIR =../lib
@@ -27,6 +27,7 @@ clean:
 	rm -f $(ODIR)/*.o *~ core $(INCDIR)/*~ 
 	
 install:
+	service lptstatusleds stop
 	install -m 0755 lptstatusleds $(prefix)/sbin
 	install -m 0755 lptstatusleds.service /etc/systemd/system
 	systemctl daemon-reload
