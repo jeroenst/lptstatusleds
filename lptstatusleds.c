@@ -435,7 +435,6 @@ int pinghost(char *hostname)
                 addr.sin_port = 0;
                 addr.sin_addr.s_addr = *(long*)hname->h_addr;
                 int result = ping(&addr);
-                free(hname);
                 if (result) printf ("Connection to host %s Ok\n", hostname);
                 else printf ("Connection to host %s Failed\n", hostname);
                 return result;
@@ -490,17 +489,14 @@ int getnetbytessec()
 
     fp = fopen("/proc/net/dev","r");
     getline(&dump, &len, fp);
-    free(dump);
     
     getline(&dump, &len, fp);
-    free(dump);
-    
     fscanf(fp,"%s %d %*d %*d %*d %*d %*d %*d %*d %d",ifacename, &bytesrecv,&bytessend);
     
     getline(&dump, &len, fp);
-    free(dump);
     
     if (strcmp (ifacename, "lo:") == 0) fscanf(fp,"%s %d %*d %*d %*d %*d %*d %*d %*d %d",ifacename, &bytesrecv,&bytessend);
+    free(dump);
     fclose(fp);
 
     struct timespec tp;
@@ -583,12 +579,12 @@ int main(int argc, char **argv)
                 
                 if (net != prevnet)
                 {
-                    if (prevnet < 0) 
+                    if ((prevnet < 0) && (net >= 0))
                     {
                         printf ("Ethernet connection is up\n");
                         pinghostcounter = 10;
                     }
-                    if (net < 0) printf ("Ethernet connection is down\n");
+                    if ((net < 0) && (prevnet >= 0)) printf ("Ethernet connection is down\n");
                     prevnet = net; 
                 }
                 
