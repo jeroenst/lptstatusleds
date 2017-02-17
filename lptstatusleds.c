@@ -1,3 +1,7 @@
+#include <netdb.h> 
+#include <stdio.h> 
+#include <stdlib.h> 
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h> 
@@ -403,7 +407,7 @@ int checkhost(char *hostname, int port, int seconds)
 
         if (so_error == 0) {
             clock_gettime(CLOCK_MONOTONIC, &tend);
-    //        printf("socket %s:%d connected. It took %.5f seconds\n",
+//            printf("socket %s:%d connected. It took %.5f seconds\n",
 //                addr, port, (((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) - ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec)));
             close(fd);
             return 1;
@@ -420,6 +424,66 @@ int checkhost(char *hostname, int port, int seconds)
     return 0;
 }
 
+typedef struct getaddrinfoThreadArgs * GetaddrinfoThreadArgs;
+
+struct getaddrinfoThreadArgs{
+    char *hostname; // Now a pointer
+    char *ipaddress; // Now a pointer
+};
+
+void *getaddrinfoThread( void * argStruct ){
+//    printf("getaddrinfoThread Start...\n");
+    GetaddrinfoThreadArgs args = argStruct;
+
+    char *hostname = args->hostname;
+
+    struct addrinfo hints, *res, *p;
+    int status;
+    char ipstr[INET6_ADDRSTRLEN];
+
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC; // AF_INET or AF_INET6 to force version
+    hints.ai_socktype = SOCK_STREAM;
+    
+
+    if ((status = getaddrinfo(hostname, NULL, &hints, &res)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
+        return NULL;
+    }
+
+    //printf("IP addresses for %s:\n\n", args->hostname);
+
+    for(p = res;p != NULL; p = p->ai_next) {
+        void *addr;
+        char *ipver;
+
+        // get the pointer to the address itself,
+        // different fields in IPv4 and IPv6:
+        if (p->ai_family == AF_INET) { // IPv4
+            struct sockaddr_in *ipv4 = (struct sockaddr_in *)p->ai_addr;
+            addr = &(ipv4->sin_addr);
+            ipver = "IPv4";
+            inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
+            strcpy (args->ipaddress, ipstr);
+        } else { // IPv6
+            struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)p->ai_addr;
+            addr = &(ipv6->sin6_addr);
+            ipver = "IPv6";
+        }
+
+        // convert the IP to a string and print it:
+        inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
+//        printf("  %s: %s\n", ipver, ipstr);
+    }
+
+    freeaddrinfo(res); // free the linked list
+
+  //  printf("getaddrinfoThread End...\n");
+    return NULL;
+}
+
+
 int pinghost(char *hostname)
 {
         struct hostent *hname;
@@ -428,21 +492,39 @@ int pinghost(char *hostname)
 
         pid = getpid();
         proto = getprotobyname("ICMP");
-                hname = gethostbyname(hostname);
+        
+        
+        pthread_t t1;
+        char ipaddress[100];
+        ipaddress[0]='\0';
+        GetaddrinfoThreadArgs args = (GetaddrinfoThreadArgs)malloc(sizeof(struct getaddrinfoThreadArgs));
+        args->hostname = hostname; // pass in a pointer to the variable, rather than the variable itself
+        args->ipaddress = ipaddress; // pass in a pointer to the variable, rather than the variable itself 
+        pthread_create(&t1, NULL, getaddrinfoThread, args);
+        sleep (2);
+        pthread_cancel(t1);
+        if (strlen(ipaddress) > 0)
+        {
+            
+                
+                        
                 bzero(&addr, sizeof(addr));
-                addr.sin_family = hname->h_addrtype;
+                addr.sin_family = AF_INET;
                 addr.sin_port = 0;
-                addr.sin_addr.s_addr = *(long*)hname->h_addr;
+                addr.sin_addr.s_addr = inet_addr(ipaddress);
                 int result = ping(&addr);
-                if (result) printf ("Connection to host %s Ok\n", hostname);
-                else printf ("Connection to host %s Failed\n", hostname);
+                if (result) printf ("Ping to host %s (%s) Ok\n", hostname, ipaddress);
+                else printf ("Ping to host %s (%s) Failed\n", hostname, ipaddress);
                 return result;
+                } else { 
+                        printf ("Ping to host %s Failed (dns lookup failed)\n", hostname);
+                        return 0;
+                } 
+               return 0;
 }
 
 
 typedef struct threadArgs * ThreadArgs;
-
-void *foo( void * argStruct );
 
 struct threadArgs{
     int *pingGateway; // Now a pointer, not an int
@@ -451,7 +533,7 @@ struct threadArgs{
 
 
 void *checkThread( void * argStruct ){
-
+    printf("CheckThread Start...\n");
     ThreadArgs args = argStruct;
     
     int pingGateway = 0;
@@ -459,9 +541,14 @@ void *checkThread( void * argStruct ){
 
     pingGateway = pinghost (getgateway());
     pingInternet = pinghost ("www.google.com");
-
+    // If google.com is offline try microsoft.com
+    if (!pingInternet) pingInternet = pinghost ("www.microsoft.com");
+    // If internet is online but gateway offline retry gateway, maybe it was online later
+    if ((pingInternet) && (!pingGateway)) pingGateway = pinghost (getgateway());
+    
     *args->pingGateway = pingGateway;
     *args->pingInternet = pingInternet;
+    printf("CheckThread End...\n");
     return NULL;
 }
 
@@ -493,9 +580,9 @@ long long getnetbytessec()
     fscanf(fp,"%s %lld %*d %*d %*d %*d %*d %*d %*d %lld",ifacename, &bytesrecv,&bytessend);
     
     getline(&dump, &len, fp);
+    free(dump);
     
     if ((!feof(fp)) && (strcmp (ifacename, "lo:") == 0)) fscanf(fp,"%s %lld %*d %*d %*d %*d %*d %*d %*d %lld",ifacename, &bytesrecv,&bytessend);
-    free(dump);
     fclose(fp);
 
     struct timespec tp;
@@ -569,7 +656,7 @@ int main(int argc, char **argv)
         int lptdata = 0;
         int netbytes = 0;
         int slowblinkloadcounter = 0;
-        int pinghostcounter = 50;
+        int pinghostcounter = 10;
         int prevnet = -1;
         while (1)
         {

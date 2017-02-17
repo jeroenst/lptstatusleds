@@ -1,11 +1,11 @@
 IDIR =../include
 CC=gcc
-CFLAGS=-I$(IDIR) -Os
+CFLAGS=-I$(IDIR) 
 
 ODIR=.
 LDIR =../lib
 
-LIBS=-lpthread
+LIBS=-lpthread -lanl
 
 _DEPS = 
 DEPS = $(patsubst %,$(IDIR)/%,$(_DEPS))
