@@ -494,7 +494,7 @@ long long getnetbytessec()
     
     getline(&dump, &len, fp);
     
-    if (strcmp (ifacename, "lo:") == 0) fscanf(fp,"%s %lld %*d %*d %*d %*d %*d %*d %*d %lld",ifacename, &bytesrecv,&bytessend);
+    if ((!feof(fp)) && (strcmp (ifacename, "lo:") == 0)) fscanf(fp,"%s %lld %*d %*d %*d %*d %*d %*d %*d %lld",ifacename, &bytesrecv,&bytessend);
     free(dump);
     fclose(fp);
 
