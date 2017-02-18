@@ -483,6 +483,21 @@ void *getaddrinfoThread( void * argStruct ){
     return NULL;
 }
 
+int pingip(char *ipaddress)
+{
+        struct hostent *hname;
+        struct sockaddr_in addr;
+        proto = getprotobyname("ICMP");
+                        
+                bzero(&addr, sizeof(addr));
+                addr.sin_family = AF_INET;
+                addr.sin_port = 0;
+                addr.sin_addr.s_addr = inet_addr(ipaddress);
+                int result = ping(&addr);
+                if (result) printf ("Ping to ip %s Ok\n", ipaddress);
+                else printf ("Ping to ip %s Failed\n", ipaddress);
+                return result;
+}
 
 int pinghost(char *hostname)
 {
@@ -505,51 +520,43 @@ int pinghost(char *hostname)
         pthread_cancel(t1);
         if (strlen(ipaddress) > 0)
         {
-            
-                
-                        
-                bzero(&addr, sizeof(addr));
-                addr.sin_family = AF_INET;
-                addr.sin_port = 0;
-                addr.sin_addr.s_addr = inet_addr(ipaddress);
-                int result = ping(&addr);
-                if (result) printf ("Ping to host %s (%s) Ok\n", hostname, ipaddress);
-                else printf ("Ping to host %s (%s) Failed\n", hostname, ipaddress);
-                return result;
-                } else { 
-                        printf ("Ping to host %s Failed (dns lookup failed)\n", hostname);
-                        return 0;
-                } 
-               return 0;
+          return pingip(ipaddress);  
+        } else { 
+            printf ("Dns lookup for %s Failed\n", hostname);
+            return 0;
+        } 
+        return -1;
 }
 
 
-typedef struct threadArgs * ThreadArgs;
 
-struct threadArgs{
+typedef struct pingthreadArgs * pingThreadArgs;
+
+struct pingthreadArgs{
     int *pingGateway; // Now a pointer, not an int
     int *pingInternet; // Now a pointer, not an int
 };
 
 
-void *checkThread( void * argStruct ){
-    printf("CheckThread Start...\n");
-    ThreadArgs args = argStruct;
+void *pingThread( void * argStruct ){
+    printf("PingThread Start...\n");
+    pingThreadArgs args = argStruct;
     
     int pingGateway = 0;
     int pingInternet = 0;
 
-    pingGateway = pinghost (getgateway());
-    pingInternet = pinghost ("www.google.com");
-    // If google.com is offline try microsoft.com
-    if (!pingInternet) pingInternet = pinghost ("www.microsoft.com");
+    pingGateway = pingip (getgateway());
+    pingInternet = pingip ("8.8.8.8");
+    if (!pingInternet) pingInternet = pingip ("4.2.2.1");
+    if (!pingInternet) pingInternet = pingip ("151.197.0.38");
+    if (!pingInternet) pingInternet = pingip ("81.218.119.11");
     // If internet is online but gateway offline retry gateway, maybe it was online later
     if ((pingInternet) && (!pingGateway)) pingGateway = pinghost (getgateway());
     
     *args->pingGateway = pingGateway;
     *args->pingInternet = pingInternet;
-    printf("CheckThread End...\n");
-    return NULL;
+    printf("PingThread End...\n");
+    pthread_exit(0);
 }
 
 long long getnetbytessec()
@@ -598,7 +605,7 @@ long long getnetbytessec()
     return(bytessec);
 }
 
-double getload(void)
+double getcpuload(void)
 {
     long double a[4], b[4];
     int cpuusage;
@@ -621,6 +628,7 @@ double getload(void)
 int fd;
 int main(int argc, char **argv)
 {
+    setbuf(stdout, NULL);
     static struct sigaction _sigact;
 
     memset(&_sigact, 0, sizeof(_sigact));
@@ -631,17 +639,16 @@ int main(int argc, char **argv)
     sigaction(SIGINT, &_sigact, NULL);
     sigaction(15, &_sigact, NULL);
     
-    pthread_t t1;
+    pthread_t t1 = 0;
     int pingGateway = 0;
     int pingInternet = 0;
     int ch;
-    ThreadArgs args = (ThreadArgs)malloc(sizeof(struct threadArgs));
+    pingThreadArgs args = (pingThreadArgs)malloc(sizeof(struct pingthreadArgs));
     args->pingInternet = &pingInternet; // pass in a pointer to the variable, rather than the variable itself
     args->pingGateway = &pingGateway; // pass in a pointer to the variable, rather than the variable itself
 
 
         struct ppdev_frob_struct frob;
-       // int fd;
         int mode;
 
         if((fd=open(DEVICE, O_RDWR)) < 0) {
@@ -656,11 +663,11 @@ int main(int argc, char **argv)
         int lptdata = 0;
         int netbytes = 0;
         int slowblinkloadcounter = 0;
-        int pinghostcounter = 10;
+        int pinghostcounter = 0;
         int prevnet = -1;
         while (1)
         {
-                double load = getload();
+                double cpuload = getcpuload();
                 long long net = getnetbytessec();
                 
                 if (net != prevnet)
@@ -676,9 +683,22 @@ int main(int argc, char **argv)
                 
                 if (pinghostcounter-- < 0)
                 {
-                        pthread_create(&t1, NULL, checkThread, args);
-                        pinghostcounter = 25;
+                        if (t1)
+                        {
+                            pthread_cancel(t1);
+                            void *res;
+                            pthread_join(t1, NULL);
+                        }
                         printf ("Current network troughput in bytes/sec: %lld\n", net); 
+                        int ret = pthread_create(&t1, NULL, pingThread, args);
+                        if (ret) printf("Creation of pingthread failed errno:%d\n",ret);
+                        pinghostcounter = 50;
+                }
+                
+                // If previous internet state was offline, do checks faster
+                if ((pinghostcounter > 5) && (pingInternet == 0))
+                {
+                    pinghostcounter = 5;
                 }
 
                 if (net > 0) // When traffic is measured blink 1st led
@@ -694,11 +714,11 @@ int main(int argc, char **argv)
 
                 if (slowblinkloadcounter++ > 6) slowblinkloadcounter = 0;
                 
-                if (load >= 50) lptdata |= 0b1000; // If load is above 50% enable alarm led
+                if (cpuload >= 50) lptdata |= 0b1000; // If load is above 50% enable alarm led
                 
                 if (slowblinkloadcounter > 3)
                 {
-                    if (load < 90) lptdata &= 0b11110111; // If load is below 90% blink alarm led
+                    if (cpuload < 90) lptdata &= 0b11110111; // If load is below 90% blink alarm led
                 }
 
                 if (net >= 0) lptdata |= 0b10000; // When connection is ok show 1st led
@@ -718,6 +738,7 @@ int main(int argc, char **argv)
                 ioctl(fd, PPWDATA,&lptdata); // write leds to lpt port
         }
 
+        pthread_cancel(t1);
         pthread_join(t1, NULL);
         printf("whole program terminating\n");
         /* put example code here ... */
