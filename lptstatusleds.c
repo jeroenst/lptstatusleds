@@ -2,90 +2,52 @@
 #include <stdio.h> 
 #include <stdlib.h> 
 #include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <pthread.h> 
 #include <unistd.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <signal.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <time.h>
+#include <ifaddrs.h>
+#include <resolv.h>
+
+#include <asm/ioctl.h>
+
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <netdb.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <time.h>
-
-#include <netinet/in.h>
-#include <net/if.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+
+#include <arpa/inet.h>
+
+#include <net/if.h>
+#include <netinet/ip_icmp.h>
+#include <netinet/in.h>
+
+#include <linux/lp.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <time.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <ifaddrs.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <linux/lp.h>
-#include <stdio.h>
-#include <fcntl.h>              /* open() */
-#include <sys/types.h>          /* open() */
-#include <sys/stat.h>           /* open() */
-#include <asm/ioctl.h>
 #include <linux/parport.h>
 #include <linux/ppdev.h>
+
 #define DEVICE "/dev/parport0"
+#define PACKETSIZE 64
 
-#include <fcntl.h>
-#include <errno.h>
-#include <sys/socket.h>
-#include <resolv.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <netinet/ip_icmp.h>
-
-#define PACKETSIZE	64
 struct packet
 {
 	struct icmphdr hdr;
 	char msg[PACKETSIZE-sizeof(struct icmphdr)];
 };
 
-
 void sig_term_handler(int signum, siginfo_t *info, void *ptr);
+double getload(void);
+int getnetbytes(void);
 
 int pid=-1;
 struct protoent *proto=NULL;
-
-
-
 
 /*--------------------------------------------------------------------*/
 /*--- checksum - standard 1s complement checksum                   ---*/
@@ -146,12 +108,6 @@ int ping(struct sockaddr_in *addr)
 	}
 }
 
-
-double getload(void);
-int getnetbytes(void);
-
-
-
 #define BUFSIZE 8192
 char gateway[255];
 
@@ -200,40 +156,6 @@ int readNlSock(int sockFd, char *bufPtr, int seqNum, int pId)
     } while ((nlHdr->nlmsg_seq != seqNum) || (nlHdr->nlmsg_pid != pId));
     return msgLen;
 }
-/* For printing the routes. */
-void printRoute(struct route_info *rtInfo)
-{
-    char tempBuf[512];
-
-/* Print Destination address */
-    if (rtInfo->dstAddr.s_addr != 0)
-        strcpy(tempBuf,  inet_ntoa(rtInfo->dstAddr));
-    else
-        sprintf(tempBuf, "*.*.*.*\t");
-  //  fprintf(stdout, "%s\t", tempBuf);
-
-/* Print Gateway address */
-    if (rtInfo->gateWay.s_addr != 0)
-        strcpy(tempBuf, (char *) inet_ntoa(rtInfo->gateWay));
-    else
-        sprintf(tempBuf, "*.*.*.*\t");
-    //fprintf(stdout, "%s\t", tempBuf);
-
-    /* Print Interface Name*/
-    //fprintf(stdout, "%s\t", rtInfo->ifName);
-
-    /* Print Source address */
-    if (rtInfo->srcAddr.s_addr != 0)
-        strcpy(tempBuf, inet_ntoa(rtInfo->srcAddr));
-    else
-        sprintf(tempBuf, "*.*.*.*\t");
-    //fprintf(stdout, "%s\n", tempBuf);
-}
-
-void printGateway()
-{
-    printf("%s\n", gateway);
-}
 
 /* For parsing the route info returned */
 void parseRoutes(struct nlmsghdr *nlHdr, struct route_info *rtInfo)
@@ -244,12 +166,12 @@ void parseRoutes(struct nlmsghdr *nlHdr, struct route_info *rtInfo)
 
     rtMsg = (struct rtmsg *) NLMSG_DATA(nlHdr);
 
-/* If the route is not for AF_INET or does not belong to main routing table
-then return. */
+    /* If the route is not for AF_INET or does not belong to main routing table
+    then return. */
     if ((rtMsg->rtm_family != AF_INET) || (rtMsg->rtm_table != RT_TABLE_MAIN))
         return;
 
-/* get the rtattr field */
+    /* get the rtattr field */
     rtAttr = (struct rtattr *) RTM_RTA(rtMsg);
     rtLen = RTM_PAYLOAD(nlHdr);
     for (; RTA_OK(rtAttr, rtLen); rtAttr = RTA_NEXT(rtAttr, rtLen)) {
@@ -268,15 +190,12 @@ then return. */
             break;
         }
     }
-    //printf("%s\n", inet_ntoa(rtInfo->dstAddr));
 
     if (rtInfo->dstAddr.s_addr == 0)
         sprintf(gateway, "%s", (char *) inet_ntoa(rtInfo->gateWay));
-    //printRoute(rtInfo);
 
     return;
 }
-
 
 char *getgateway()
 {
@@ -287,17 +206,17 @@ char *getgateway()
 
     int sock, len, msgSeq = 0;
 
-/* Create Socket */
+    /* Create Socket */
     if ((sock = socket(PF_NETLINK, SOCK_DGRAM, NETLINK_ROUTE)) < 0)
         perror("Socket Creation: ");
 
     memset(msgBuf, 0, BUFSIZE);
 
-/* point the header and the msg structure pointers into the buffer */
+    /* point the header and the msg structure pointers into the buffer */
     nlMsg = (struct nlmsghdr *) msgBuf;
     rtMsg = (struct rtmsg *) NLMSG_DATA(nlMsg);
 
-/* Fill in the nlmsg header*/
+    /* Fill in the nlmsg header*/
     nlMsg->nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg));  // Length of message.
     nlMsg->nlmsg_type = RTM_GETROUTE;   // Get the routes from kernel routing table .
 
@@ -305,20 +224,18 @@ char *getgateway()
     nlMsg->nlmsg_seq = msgSeq++;    // Sequence of the message packet.
     nlMsg->nlmsg_pid = getpid();    // PID of process sending the request.
 
-/* Send the request */
+    /* Send the request */
     if (send(sock, nlMsg, nlMsg->nlmsg_len, 0) < 0) {
-      //  printf("Write To Socket Failed...\n");
         return "";
     }
 
-/* Read the response */
+    /* Read the response */
     if ((len = readNlSock(sock, msgBuf, msgSeq, getpid())) < 0) {
-     //   printf("Read From Socket Failed...\n");
     return "";
     }
-/* Parse and print the response */
+    
+    /* Parse and print the response */
     rtInfo = (struct route_info *) malloc(sizeof(struct route_info));
-//fprintf(stdout, "Destination\tGateway\tInterface\tSource\n");
     for (; NLMSG_OK(nlMsg, len); nlMsg = NLMSG_NEXT(nlMsg, len)) {
         memset(rtInfo, 0, sizeof(struct route_info));
         parseRoutes(nlMsg, rtInfo);
@@ -326,161 +243,7 @@ char *getgateway()
     free(rtInfo);
     close(sock);
 
-//    printGateway();
     return gateway;
-}
-
-
-int checkhost(char *hostname, int port, int seconds)
-{
-    struct sockaddr_in addr_s;
-    char *addr;
-    short int fd=-1;
-    fd_set fdset;
-    struct timeval tv;
-    int rc;
-    int so_error;
-    socklen_t len;
-    struct timespec tstart={0,0}, tend={0,0};
-
-    int i;
-    struct hostent *he;
-    struct in_addr **addr_list;
-
-    if ((he = gethostbyname(hostname)) == NULL) {  // get the host info
-        herror("gethostbyname");
-        return -1;
-    }
-
-    // print information about this host:
-   // printf("Official name is: %s\n", he->h_name);
-   // printf("    IP addresses: ");
-    addr_list = (struct in_addr **)he->h_addr_list;
-    for(i = 0; addr_list[i] != NULL; i++) {
-//        printf("%s ", inet_ntoa(*addr_list[i]));
-    }
-    printf("\n");
-    
-    
-    addr = inet_ntoa(*addr_list[0]);
-
-    //printf("addr=%s\n", addr);
-    addr_s.sin_family = AF_INET; // utilizzo IPv4
-    addr_s.sin_addr.s_addr = inet_addr(addr);
-    addr_s.sin_port = htons(port);
-
-    clock_gettime(CLOCK_MONOTONIC, &tstart);
-
-    fd = socket(AF_INET, SOCK_STREAM, 0);
-    fcntl(fd, F_SETFL, O_NONBLOCK); // setup non blocking socket
-
-    // make the connection
-    rc = connect(fd, (struct sockaddr *)&addr_s, sizeof(addr_s));
-    if ((rc == -1) && (errno != EINPROGRESS)) {
-        fprintf(stderr, "Error: %s\n", strerror(errno));
-        close(fd);
-        return -2;
-    }
-    if (rc == 0) {
-        // connection has succeeded immediately
-        clock_gettime(CLOCK_MONOTONIC, &tend);
-        //printf("socket %s:%d connected. It took %.5f seconds\n",
-        //    addr, port, (((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) - ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec)));
-
-        close(fd);
-        return 1;
-    } /*else {
-        // connection attempt is in progress
-    } */
-
-    FD_ZERO(&fdset);
-    FD_SET(fd, &fdset);
-    tv.tv_sec = seconds;
-    tv.tv_usec = 0;
-
-    rc = select(fd + 1, NULL, &fdset, NULL, &tv);
-    switch(rc) {
-    case 1: // data to read
-        len = sizeof(so_error);
-
-        getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &len);
-
-        if (so_error == 0) {
-            clock_gettime(CLOCK_MONOTONIC, &tend);
-//            printf("socket %s:%d connected. It took %.5f seconds\n",
-//                addr, port, (((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) - ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec)));
-            close(fd);
-            return 1;
-        } else { // error
-//            printf("socket %s:%d NOT connected: %s\n", addr, port, strerror(so_error));
-        }
-        break;
-    case 0: //timeout
-  //      fprintf(stderr, "connection timeout trying to connect to %s:%d\n", addr, port);
-        break;
-    }
-
-    close(fd);
-    return 0;
-}
-
-typedef struct getaddrinfoThreadArgs * GetaddrinfoThreadArgs;
-
-struct getaddrinfoThreadArgs{
-    char *hostname; // Now a pointer
-    char *ipaddress; // Now a pointer
-};
-
-void *getaddrinfoThread( void * argStruct ){
-//    printf("getaddrinfoThread Start...\n");
-    GetaddrinfoThreadArgs args = argStruct;
-
-    char *hostname = args->hostname;
-
-    struct addrinfo hints, *res, *p;
-    int status;
-    char ipstr[INET6_ADDRSTRLEN];
-
-
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC; // AF_INET or AF_INET6 to force version
-    hints.ai_socktype = SOCK_STREAM;
-    
-
-    if ((status = getaddrinfo(hostname, NULL, &hints, &res)) != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
-        return NULL;
-    }
-
-    //printf("IP addresses for %s:\n\n", args->hostname);
-
-    for(p = res;p != NULL; p = p->ai_next) {
-        void *addr;
-        char *ipver;
-
-        // get the pointer to the address itself,
-        // different fields in IPv4 and IPv6:
-        if (p->ai_family == AF_INET) { // IPv4
-            struct sockaddr_in *ipv4 = (struct sockaddr_in *)p->ai_addr;
-            addr = &(ipv4->sin_addr);
-            ipver = "IPv4";
-            inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
-            strcpy (args->ipaddress, ipstr);
-        } else { // IPv6
-            struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)p->ai_addr;
-            addr = &(ipv6->sin6_addr);
-            ipver = "IPv6";
-        }
-
-        // convert the IP to a string and print it:
-        inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
-//        printf("  %s: %s\n", ipver, ipstr);
-    }
-
-    freeaddrinfo(res); // free the linked list
-
-  //  printf("getaddrinfoThread End...\n");
-    return NULL;
 }
 
 int pingip(char *ipaddress)
@@ -499,44 +262,12 @@ int pingip(char *ipaddress)
                 return result;
 }
 
-int pinghost(char *hostname)
-{
-        struct hostent *hname;
-        struct sockaddr_in addr;
-
-
-        pid = getpid();
-        proto = getprotobyname("ICMP");
-        
-        
-        pthread_t t1;
-        char ipaddress[100];
-        ipaddress[0]='\0';
-        GetaddrinfoThreadArgs args = (GetaddrinfoThreadArgs)malloc(sizeof(struct getaddrinfoThreadArgs));
-        args->hostname = hostname; // pass in a pointer to the variable, rather than the variable itself
-        args->ipaddress = ipaddress; // pass in a pointer to the variable, rather than the variable itself 
-        pthread_create(&t1, NULL, getaddrinfoThread, args);
-        sleep (2);
-        pthread_cancel(t1);
-        if (strlen(ipaddress) > 0)
-        {
-          return pingip(ipaddress);  
-        } else { 
-            printf ("Dns lookup for %s Failed\n", hostname);
-            return 0;
-        } 
-        return -1;
-}
-
-
-
 typedef struct pingthreadArgs * pingThreadArgs;
 
 struct pingthreadArgs{
     int *pingGateway; // Now a pointer, not an int
     int *pingInternet; // Now a pointer, not an int
 };
-
 
 void *pingThread( void * argStruct ){
     printf("PingThread Start...\n");
@@ -550,8 +281,9 @@ void *pingThread( void * argStruct ){
     if (!pingInternet) pingInternet = pingip ("4.2.2.1");
     if (!pingInternet) pingInternet = pingip ("151.197.0.38");
     if (!pingInternet) pingInternet = pingip ("81.218.119.11");
+    
     // If internet is online but gateway offline retry gateway, maybe it was online later
-    if ((pingInternet) && (!pingGateway)) pingGateway = pinghost (getgateway());
+    if ((pingInternet) && (!pingGateway)) pingGateway = pingip (getgateway());
     
     *args->pingGateway = pingGateway;
     *args->pingInternet = pingInternet;
@@ -569,27 +301,28 @@ long long getnetbytessec()
     char *dump = NULL;
     size_t len = 0;
     char ifacename[50];
+    int ret;
 
     // Check if ethernet device is connected
     fp = fopen("/sys/class/net/enp1s0/carrier","r");
-    fscanf(fp,"%d",&connected);
+    ret = fscanf(fp,"%d",&connected);
     fclose(fp);
     if (connected == 0)
     {
-        //printf ("Network is disconnected\n");
+        // Network is disconnected
         return -1;
     }
 
     fp = fopen("/proc/net/dev","r");
-    getline(&dump, &len, fp);
+    ret = getline(&dump, &len, fp);
     
-    getline(&dump, &len, fp);
-    fscanf(fp,"%s %lld %*d %*d %*d %*d %*d %*d %*d %lld",ifacename, &bytesrecv,&bytessend);
+    ret = getline(&dump, &len, fp);
+    ret = fscanf(fp,"%s %lld %*d %*d %*d %*d %*d %*d %*d %lld",ifacename, &bytesrecv,&bytessend);
     
-    getline(&dump, &len, fp);
+    ret = getline(&dump, &len, fp);
     free(dump);
     
-    if ((!feof(fp)) && (strcmp (ifacename, "lo:") == 0)) fscanf(fp,"%s %lld %*d %*d %*d %*d %*d %*d %*d %lld",ifacename, &bytesrecv,&bytessend);
+    if ((!feof(fp)) && (strcmp (ifacename, "lo:") == 0)) ret = fscanf(fp,"%s %lld %*d %*d %*d %*d %*d %*d %*d %lld",ifacename, &bytesrecv,&bytessend);
     fclose(fp);
 
     struct timespec tp;
@@ -598,7 +331,6 @@ long long getnetbytessec()
 
 
     bytessec = ((bytesrecv + bytessend - oldbytes)*1000) / ((timestamp - oldtimestamp));
-//    printf("The current network troughput on %s is : %d bytes/sec (measured in %ld ms)\n",ifacename, bytessec, (timestamp - oldtimestamp));
     oldbytes = bytesrecv + bytessend;
     oldtimestamp = timestamp;
     if (strcmp (ifacename, "lo") == 0) return -1;
@@ -610,21 +342,22 @@ double getcpuload(void)
     long double a[4], b[4];
     int cpuusage;
     FILE *fp;
+    int ret;
 
-        fp = fopen("/proc/stat","r");
-        fscanf(fp,"%*s %Lf %Lf %Lf %Lf",&a[0],&a[1],&a[2],&a[3]);
-        fclose(fp);
-        usleep(200000);
+    fp = fopen("/proc/stat","r");
+    ret = fscanf(fp,"%*s %Lf %Lf %Lf %Lf",&a[0],&a[1],&a[2],&a[3]);
+    fclose(fp);
+    usleep(200000);
 
-        fp = fopen("/proc/stat","r");
-        fscanf(fp,"%*s %Lf %Lf %Lf %Lf",&b[0],&b[1],&b[2],&b[3]);
-        fclose(fp);
+    fp = fopen("/proc/stat","r");
+    ret = fscanf(fp,"%*s %Lf %Lf %Lf %Lf",&b[0],&b[1],&b[2],&b[3]);
+    fclose(fp);
 
-        cpuusage = (((b[0]+b[1]+b[2]) - (a[0]+a[1]+a[2])) / ((b[0]+b[1]+b[2]+b[3]) - (a[0]+a[1]+a[2]+a[3])))*100;
-  //      printf("The current CPU utilization is : %d%%\n",cpuusage);
+    cpuusage = (((b[0]+b[1]+b[2]) - (a[0]+a[1]+a[2])) / ((b[0]+b[1]+b[2]+b[3]) - (a[0]+a[1]+a[2]+a[3])))*100;
 
     return(cpuusage);
 }
+
 int fd;
 int main(int argc, char **argv)
 {
@@ -647,29 +380,33 @@ int main(int argc, char **argv)
     args->pingInternet = &pingInternet; // pass in a pointer to the variable, rather than the variable itself
     args->pingGateway = &pingGateway; // pass in a pointer to the variable, rather than the variable itself
 
+    struct ppdev_frob_struct frob;
+    int mode;
 
-        struct ppdev_frob_struct frob;
-        int mode;
-
-        if((fd=open(DEVICE, O_RDWR)) < 0) {
-                fprintf(stderr, "can not open %s\n", DEVICE);
-                exit(1);
-        }
-        if(ioctl(fd, PPCLAIM)) {
-                perror("PPCLAIM");
-                close(fd);
-                exit(1);
-        }
-        int lptdata = 0;
-        int netbytes = 0;
-        int slowblinkloadcounter = 0;
-        int pinghostcounter = 0;
-        int prevnet = -1;
-        while (1)
-        {
+    if((fd=open(DEVICE, O_RDWR)) < 0) 
+    {
+           fprintf(stderr, "can not open %s\n", DEVICE);
+           exit(1);
+    }
+    
+    if(ioctl(fd, PPCLAIM)) 
+    {
+           perror("PPCLAIM");
+           close(fd);
+           exit(1);
+    }
+    
+    int lptdata = 0;
+    int netbytes = 0;
+    int slowblinkloadcounter = 0;
+    int pinghostcounter = 50;
+    int prevnet = -1;
+    while (1)
+    {
                 double cpuload = getcpuload();
                 long long net = getnetbytessec();
                 
+                // When network connection changes from online to offline or visa versa display message
                 if (net != prevnet)
                 {
                     if ((prevnet < 0) && (net >= 0))
@@ -681,6 +418,7 @@ int main(int argc, char **argv)
                     prevnet = net; 
                 }
                 
+                // Check hosts with ping to determine if default gateway is online and if internet is reachable
                 if (pinghostcounter-- < 0)
                 {
                         if (t1)
@@ -696,39 +434,27 @@ int main(int argc, char **argv)
                 }
                 
                 // If previous internet state was offline, do checks faster
-                if ((pinghostcounter > 5) && (pingInternet == 0))
-                {
-                    pinghostcounter = 5;
-                }
+                if ((pinghostcounter > 5) && (pingInternet == 0)) pinghostcounter = 5;
 
-                if (net > 0) // When traffic is measured blink 1st led
-                {
-                    lptdata &= 0b11101111; // When little traffic is generated blink 1st led
-                }
-                
+                if (net > 0) lptdata &= 0b11101111; // When traffic is measured blink 1st led
                 if (net > 104857)   lptdata &= 0b11011111; // When more than 1mbit traffic is generated blink 2nd led
                 if (net > 10485760) lptdata &= 0b10111111; // Above 100 mbit blink 3rd led
                 ioctl(fd, PPWDATA,&lptdata); // Write leds to lpt port
 
                 usleep (200000);
 
-                if (slowblinkloadcounter++ > 6) slowblinkloadcounter = 0;
                 
                 if (cpuload >= 50) lptdata |= 0b1000; // If load is above 50% enable alarm led
-                
-                if (slowblinkloadcounter > 3)
-                {
-                    if (cpuload < 90) lptdata &= 0b11110111; // If load is below 90% blink alarm led
-                }
+                if (slowblinkloadcounter++ > 6) slowblinkloadcounter = 0;
+                if ((slowblinkloadcounter > 3) && (cpuload < 90)) lptdata &= 0b11110111; // If load is below 90% blink alarm led
 
                 if (net >= 0) lptdata |= 0b10000; // When connection is ok show 1st led
-                else
+                else // When connection is not ok turn all network leds off
                 {
                     lptdata &= 0b11101111;
                     pingGateway = 0;
                     pingInternet = 0;
                 }
-                    
 
                 if (pingGateway) lptdata |= 0b100000; // If gateway is reachable show 2nd led
                 else lptdata &= 0b11011111;
@@ -736,15 +462,14 @@ int main(int argc, char **argv)
                 if (pingInternet)  lptdata |= 0b1000000; // If internet is reachable (google) show 3rd led
                 else lptdata &= 0b10111111;
                 ioctl(fd, PPWDATA,&lptdata); // write leds to lpt port
-        }
+    }
 
-        pthread_cancel(t1);
-        pthread_join(t1, NULL);
-        printf("whole program terminating\n");
-        /* put example code here ... */
-        ioctl(fd, PPRELEASE);
-        close(fd);
-        return 0;
+    pthread_cancel(t1);
+    pthread_join(t1, NULL);
+    printf("whole program terminating\n");
+    ioctl(fd, PPRELEASE);
+    close(fd);
+    return 0;
 }
 
 void sig_term_handler(int signum, siginfo_t *info, void *ptr)
@@ -754,3 +479,4 @@ void sig_term_handler(int signum, siginfo_t *info, void *ptr)
         close(fd);
         abort();
 }
+
