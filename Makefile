@@ -28,8 +28,8 @@ clean:
 	
 install:
 	service lptstatusleds stop
-	install -m 0755 lptstatusleds $(prefix)/sbin
-	install -m 0755 lptstatusleds.service /etc/systemd/system
+	install -m 0744 lptstatusleds $(prefix)/sbin
+	install -m 0444 lptstatusleds.service /etc/systemd/system
 	systemctl daemon-reload
 	systemctl enable lptstatusleds
 	service lptstatusleds start
