@@ -34,7 +34,7 @@
 #include <linux/ppdev.h>
 
 #define DEVICE "/dev/parport0"
-#define PACKETSIZE 64
+#define PACKETSIZE 9
 
 struct packet
 {
