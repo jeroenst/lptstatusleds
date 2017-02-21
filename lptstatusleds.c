@@ -49,6 +49,8 @@ int getnetbytes(void);
 int pid=-1;
 struct protoent *proto=NULL;
 
+int debug = 0;
+
 /*--------------------------------------------------------------------*/
 /*--- checksum - standard 1s complement checksum                   ---*/
 /*--------------------------------------------------------------------*/
@@ -257,7 +259,7 @@ int pingip(char *ipaddress)
                 addr.sin_port = 0;
                 addr.sin_addr.s_addr = inet_addr(ipaddress);
                 int result = ping(&addr);
-                if (result) printf ("Ping to ip %s Ok\n", ipaddress);
+                if (result) {if (debug) printf ("Ping to ip %s Ok\n", ipaddress);}
                 else printf ("Ping to ip %s Failed\n", ipaddress);
                 return result;
 }
@@ -270,7 +272,7 @@ struct pingthreadArgs{
 };
 
 void *pingThread( void * argStruct ){
-    printf("PingThread Start...\n");
+    if (debug) printf("PingThread Start...\n");
     pingThreadArgs args = argStruct;
     
     int pingGateway = 0;
@@ -287,7 +289,7 @@ void *pingThread( void * argStruct ){
     
     *args->pingGateway = pingGateway;
     *args->pingInternet = pingInternet;
-    printf("PingThread End...\n");
+    if (debug) printf("PingThread End...\n");
     pthread_exit(0);
 }
 
@@ -364,6 +366,22 @@ int main(int argc, char **argv)
     setbuf(stdout, NULL);
     static struct sigaction _sigact;
 
+    int opt = 0;
+    while ((opt = getopt(argc, argv, "dh")) != -1) 
+    {
+        switch(opt) 
+        {
+            case 'd':
+            debug = 1;
+            printf("\nDebug mode enabled\n");
+            break;
+            case 'h':
+            printf("\n-d = debug\n-h = help\n\n");
+            exit(0);
+            break;
+        }
+    }    
+
     memset(&_sigact, 0, sizeof(_sigact));
     _sigact.sa_sigaction = sig_term_handler;
     _sigact.sa_flags = SA_SIGINFO;
@@ -383,6 +401,8 @@ int main(int argc, char **argv)
     struct ppdev_frob_struct frob;
     int mode;
 
+    if (debug) printf ("Starting LPTSTATUSLEDS....\n");
+
     if((fd=open(DEVICE, O_RDWR)) < 0) 
     {
            fprintf(stderr, "can not open %s\n", DEVICE);
@@ -395,6 +415,7 @@ int main(int argc, char **argv)
            close(fd);
            exit(1);
     }
+    if (debug) printf ("lpt port initialized....\n");
     
     int lptdata = 0;
     int netbytes = 0;
@@ -411,7 +432,7 @@ int main(int argc, char **argv)
                 {
                     if ((prevnet < 0) && (net >= 0))
                     {
-                        printf ("Ethernet connection is up\n");
+                        if (debug) printf ("Ethernet connection is up\n");
                         pinghostcounter = 5;
                     }
                     if ((net < 0) && (prevnet >= 0)) printf ("Ethernet connection is down\n");
@@ -427,7 +448,7 @@ int main(int argc, char **argv)
                             void *res;
                             pthread_join(t1, NULL);
                         }
-                        printf ("Current network troughput in bytes/sec: %lld\n", net); 
+                        if (debug) printf ("Current network troughput in bytes/sec: %lld\n", net); 
                         int ret = pthread_create(&t1, NULL, pingThread, args);
                         if (ret) printf("Creation of pingthread failed errno:%d\n",ret);
                         pinghostcounter = 50;
