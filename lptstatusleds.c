@@ -317,26 +317,34 @@ long long getnetbytessec()
 
     fp = fopen("/proc/net/dev","r");
     ret = getline(&dump, &len, fp);
+    ifacename[0]='\0';
     
-    ret = getline(&dump, &len, fp);
-    ret = fscanf(fp,"%s %lld %*d %*d %*d %*d %*d %*d %*d %lld",ifacename, &bytesrecv,&bytessend);
-    
-    ret = getline(&dump, &len, fp);
+    while ((!feof(fp)) && (strcmp (ifacename, "enp1s0:") != 0))
+    {
+         ret = getline(&dump, &len, fp);
+         ret = fscanf(fp,"%s %lld %*d %*d %*d %*d %*d %*d %*d %lld",ifacename, &bytesrecv,&bytessend);
+    }
+    fclose(fp);
     free(dump);
     
-    if ((!feof(fp)) && (strcmp (ifacename, "lo:") == 0)) ret = fscanf(fp,"%s %lld %*d %*d %*d %*d %*d %*d %*d %lld",ifacename, &bytesrecv,&bytessend);
-    fclose(fp);
+    if (ret)
+    {
+        struct timespec tp;
+        clock_gettime(CLOCK_MONOTONIC_RAW, &tp);
+        long timestamp  = (1000 * tp.tv_sec) + (tp.tv_nsec/1000000);
 
-    struct timespec tp;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &tp);
-    long timestamp  = (1000 * tp.tv_sec) + (tp.tv_nsec/1000000);
 
-
-    bytessec = ((bytesrecv + bytessend - oldbytes)*1000) / ((timestamp - oldtimestamp));
-    oldbytes = bytesrecv + bytessend;
-    oldtimestamp = timestamp;
-    if (strcmp (ifacename, "lo") == 0) return -1;
-    return(bytessec);
+        bytessec = ((bytesrecv + bytessend - oldbytes)*1000) / ((timestamp - oldtimestamp));
+        oldbytes = bytesrecv + bytessend;
+        oldtimestamp = timestamp;
+        if (strcmp (ifacename, "lo") == 0) return -1;
+        return(bytessec);
+    }
+    else
+    {
+        printf ("Error while reading bytes of network interface\n");
+        return 0;
+    }
 }
 
 double getcpuload(void)
